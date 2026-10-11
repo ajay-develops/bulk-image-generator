@@ -14,16 +14,16 @@ import { clean, emptyState, type Slot, type SlotIndex, type StateMap, type Word,
  *   images/<key>/<id>.webp     the pictures
  */
 export function dataDir(): string {
-  return resolve(process.env.DATA_DIR ?? './data');
+  return resolve(/* turbopackIgnore: true */ process.env.DATA_DIR ?? './data');
 }
 
 export function imagePath(key: string, id: string): string {
-  return join(dataDir(), 'images', key, `${id}.webp`);
+  return join(/* turbopackIgnore: true */ dataDir(), 'images', key, `${id}.webp`);
 }
 
 async function readJson<T>(name: string, fallback: T): Promise<T> {
   try {
-    return JSON.parse(await readFile(join(dataDir(), name), 'utf8')) as T;
+    return JSON.parse(await readFile(/* turbopackIgnore: true */ join(/* turbopackIgnore: true */ dataDir(), name), 'utf8')) as T;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return fallback;
     throw error;
@@ -32,7 +32,7 @@ async function readJson<T>(name: string, fallback: T): Promise<T> {
 
 /** Written beside the real file and renamed over it, so a reader never sees half a file. */
 async function writeJson(name: string, value: unknown): Promise<void> {
-  const file = join(dataDir(), name);
+  const file = join(/* turbopackIgnore: true */ dataDir(), name);
   await mkdir(dirname(file), { recursive: true });
   const tmp = `${file}.${randomBytes(4).toString('hex')}.tmp`;
   await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`);

@@ -135,5 +135,9 @@ export async function exportZip(scope: ExportScope): Promise<{ zip: Uint8Array; 
       s.exportedAt = now;
     });
   }
-  return { zip, filename: `zema-pictures-${now.slice(0, 16).replace(/[:T]/g, '-')}.zip` };
+  // Named by this Mac's clock, so the newest zip in Downloads is easy to spot.
+  const d = new Date(now);
+  const two = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}-${two(d.getHours())}-${two(d.getMinutes())}`;
+  return { zip, filename: `zema-pictures-${stamp}.zip` };
 }
