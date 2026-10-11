@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CardView } from './actions';
-import { createLimiter, jobsFor, runQueue, visibleWords, type Job } from './bulk';
+import { createLimiter, jobsFor, mergeAdopted, runQueue, visibleWords, type Job } from './bulk';
 import type { Slot, WordState } from './types';
 
 const filled: Slot = { id: 'aaaaaaaaaaaa', seed: 1, subject: 'x', createdAt: '2026-10-11T00:00:00.000Z' };
@@ -107,4 +107,19 @@ describe('createLimiter', () => {
     await expect(limit(async () => { throw new Error('x'); })).rejects.toThrow('x');
     await expect(limit(async () => 'ok')).resolves.toBe('ok');
   });
+
+describe('what stays on screen', () => {
+  it('keeps a card in view after it is chosen, until the filter changes', () => {
+    const chosen = words.map((w) => (w.key === 'a' ? { ...w, state: { ...w.state, selected: 0 as const } } : w));
+    expect(visibleWords(chosen, 'unchosen').map((w) => w.key)).toEqual(['c']);
+    expect(visibleWords(chosen, 'unchosen', new Set(['a'])).map((w) => w.key)).toEqual(['a', 'c']);
+  });
+
+  it('takes the server’s words but keeps descriptions still being typed or saved', () => {
+    const mine = [{ ...words[0], subject: 'typed here' }, { ...words[1], subject: 'old' }];
+    const theirs = [{ ...words[0], subject: 'older on disk' }, { ...words[1], subject: 'new on disk' }, words[2]];
+    const merged = mergeAdopted(mine, theirs, new Set(['a']));
+    expect(merged.map((w) => w.subject)).toEqual(['typed here', 'new on disk', 'm']);
+  });
+});
 });

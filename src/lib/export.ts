@@ -35,8 +35,9 @@ export async function buildExport(
   scope: ExportScope,
   readImage: (key: string, id: string) => Promise<Uint8Array>,
   now: string = new Date().toISOString(),
-): Promise<{ zip: Uint8Array; keys: string[] }> {
+): Promise<{ zip: Uint8Array; keys: string[]; missing: string[] }> {
   const keys = new Set(exportKeys(words, state, scope));
+  const missing: string[] = [];
   const files: Zippable = {};
   const pictures: Record<string, string>[] = [];
   for (const word of words) {
@@ -45,7 +46,16 @@ export async function buildExport(
     const slot = s.slots[s.selected!]!;
     const file = `pictures/${word.key}.webp`;
     // WebP is already compressed; deflating it again only costs time.
-    files[file] = [await readImage(word.key, slot.id), { level: 0 }];
+    let picture: Uint8Array;
+    try {
+      picture = await readImage(word.key, slot.id);
+    } catch {
+      // One lost file should not hold back every other picture.
+      keys.delete(word.key);
+      missing.push(word.key);
+      continue;
+    }
+    files[file] = [picture, { level: 0 }];
     pictures.push({
       key: word.key,
       id: word.id,
@@ -59,5 +69,6 @@ export async function buildExport(
   return {
     zip: zipSync({ 'manifest.json': strToU8(`${JSON.stringify(manifest, null, 2)}\n`), ...files }),
     keys: [...keys],
+    missing,
   };
 }

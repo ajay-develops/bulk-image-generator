@@ -36,6 +36,12 @@ export type WordState = {
   exportedAt?: string;
   /** The word as it was when the picture was chosen. */
   madeFor?: { glyph: string; meaning: string };
+  /**
+   * The word as it was when its description or first picture was made. A
+   * word's key can be reused: if a word is deleted for good and another takes
+   * its place, this is how the pictures are known to be for the old one.
+   */
+  drawnFor?: { glyph: string; meaning: string };
 };
 
 export type StateMap = Record<string, WordState>;
@@ -50,3 +56,13 @@ export const emptyState = (): WordState => ({ slots: [null, null, null], selecte
 
 /** Text is compared the way the editor stores it. */
 export const clean = (text: unknown): string => (typeof text === 'string' ? text.normalize('NFC').trim() : '');
+
+/**
+ * True when the word's spelling or meaning is not what its pictures are for:
+ * what it said when one was chosen, or failing that, when they were drawn.
+ */
+export function wordChanged(word: Word, state: WordState | undefined): boolean {
+  const was = state?.madeFor ?? state?.drawnFor;
+  if (!was) return false;
+  return clean(was.glyph) !== clean(word.glyph) || clean(was.meaning) !== clean(word.meaning);
+}

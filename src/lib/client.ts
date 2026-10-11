@@ -34,7 +34,7 @@ export function imageUrl(key: string, id: string): string {
 }
 
 /** Fetches the zip and saves it through a hidden link, so the page itself never goes anywhere. */
-export async function downloadExport(scope: 'all' | 'changed'): Promise<void> {
+export async function downloadExport(scope: 'all' | 'changed'): Promise<{ missing: string[] }> {
   const response = await fetch(`/api/export?scope=${scope}`, { cache: 'no-store' });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -50,4 +50,9 @@ export async function downloadExport(scope: 'all' | 'changed'): Promise<void> {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  try {
+    return { missing: JSON.parse(decodeURIComponent(response.headers.get('X-Missing-Pictures') ?? '%5B%5D')) as string[] };
+  } catch {
+    return { missing: [] };
+  }
 }

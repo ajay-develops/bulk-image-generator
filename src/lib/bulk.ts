@@ -4,11 +4,22 @@ import type { SlotIndex } from './types';
 export type Job = { key: string; slot: SlotIndex };
 export type Filter = 'needs' | 'unchosen' | 'all';
 
-/** needs: the editor has no picture for it. unchosen: nothing picked here yet. */
-export function visibleWords(words: CardView[], filter: Filter): CardView[] {
-  if (filter === 'needs') return words.filter((w) => !w.hasPicture);
-  if (filter === 'unchosen') return words.filter((w) => w.state.selected === null);
-  return words;
+/**
+ * needs: the editor has no picture for it. unchosen: nothing picked here yet.
+ * `keep` holds cards that stay in view although they no longer match: a card
+ * chosen under "No choice yet" would otherwise vanish from under the finger,
+ * with no way to undo the tap.
+ */
+export function visibleWords(words: CardView[], filter: Filter, keep?: ReadonlySet<string>): CardView[] {
+  if (filter === 'all') return words;
+  const matches = filter === 'needs' ? (w: CardView) => !w.hasPicture : (w: CardView) => w.state.selected === null;
+  return words.filter((w) => matches(w) || keep?.has(w.key));
+}
+
+/** The server's words, with the descriptions being typed or saved here left as they are on screen. */
+export function mergeAdopted(mine: CardView[], theirs: CardView[], typing: ReadonlySet<string>): CardView[] {
+  const typed = new Map(mine.filter((w) => typing.has(w.key)).map((w) => [w.key, w.subject]));
+  return theirs.map((w) => (typed.has(w.key) ? { ...w, subject: typed.get(w.key)! } : w));
 }
 
 /** Every empty slot of the given words, in order. */

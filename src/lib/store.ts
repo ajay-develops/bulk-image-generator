@@ -77,10 +77,17 @@ export function startingSubject(word: Word, state: WordState | undefined): strin
   return state?.subject ?? SUBJECTS[word.key] ?? word.meaning;
 }
 
+/** Notes which word the pictures are for, the first time there is something to be for. */
+export function noteDrawnFor(state: WordState, word: Word, startingOver = false): void {
+  if (startingOver || !state.drawnFor) state.drawnFor = { glyph: clean(word.glyph), meaning: clean(word.meaning) };
+}
+
 /** Puts a new picture in a slot. Clears the choice if that slot was the chosen one. */
-export async function fillSlot(key: string, index: SlotIndex, slot: Slot): Promise<{ state: WordState; replaced: string | null }> {
+export async function fillSlot(key: string, index: SlotIndex, slot: Slot, word?: Word): Promise<{ state: WordState; replaced: string | null }> {
   let replaced: string | null = null;
   const state = await updateWord(key, (s) => {
+    // With no pictures yet, this one starts the set, for the word as it is now.
+    if (word) noteDrawnFor(s, word, s.slots.every((x) => !x));
     replaced = s.slots[index]?.id ?? null;
     s.slots[index] = slot;
     if (s.selected === index) {

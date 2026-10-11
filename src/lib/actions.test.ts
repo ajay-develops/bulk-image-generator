@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -144,5 +144,50 @@ describe('actions', () => {
     await generateSlot('l2-o1', 0, fakeGenerate);
     await expect(chooseSlot('l2-o1', 0, first)).rejects.toMatchObject({ status: 409 });
     expect((await cardOf('l2-o1')).state.selected).toBeNull();
+  });
+
+  it('exports the rest when one picture file is gone, and does not mark that word as exported', async () => {
+    await importWords(zip);
+    for (const key of ['l2-o1', 'l1-o6-w2']) { await generateSlot(key, 0, fakeGenerate); await chooseSlot(key, 0); }
+    rmSync(imagePath('l2-o1', (await cardOf('l2-o1')).state.slots[0]!.id));
+    const out = await exportZip('all');
+    expect(out.missing).toEqual(['ለሚን (lemon)']);
+    expect(Object.keys(unzipSync(out.zip)).sort()).toEqual(['manifest.json', 'pictures/l1-o6-w2.webp']);
+    expect((await cardOf('l2-o1')).state.exportedAt).toBeUndefined();
+    expect((await cardOf('l1-o6-w2')).state.exportedAt).toBeTruthy();
+  });
+
+  it('refuses an export when every chosen picture file is gone', async () => {
+    await importWords(zip);
+    await generateSlot('l2-o1', 0, fakeGenerate);
+    await chooseSlot('l2-o1', 0);
+    rmSync(imagePath('l2-o1', (await cardOf('l2-o1')).state.slots[0]!.id));
+    await expect(exportZip('all')).rejects.toMatchObject({ status: 400, message: expect.stringMatching(/missing/i) });
+  });
+
+  it('remembers which word the pictures were drawn for, and flags a different word that takes the key', async () => {
+    await importWords(zip);
+    await generateSlot('l2-o1', 0, fakeGenerate);
+    expect((await cardOf('l2-o1')).changed).toBe(false);
+    const app = await importWords(zipWith({ 'l2-o1': { glyph: 'ለውዝ', meaning: 'almond' } }));
+    expect(app.words.find((w) => w.key === 'l2-o1')!.changed).toBe(true);
+    // Choosing one says "this picture is for the word as it is now".
+    await chooseSlot('l2-o1', 0);
+    expect((await cardOf('l2-o1')).changed).toBe(false);
+  });
+
+  it('remembers the word a description was written for', async () => {
+    await importWords(zip);
+    await saveSubject('l2-o1', 'a yellow lemon');
+    const app = await importWords(zipWith({ 'l2-o1': { glyph: 'ለውዝ', meaning: 'almond' } }));
+    expect(app.words.find((w) => w.key === 'l2-o1')!.changed).toBe(true);
+  });
+
+  it('starting again from empty slots is for the word as it is now', async () => {
+    await importWords(zip);
+    await saveSubject('l2-o1', 'a yellow lemon');
+    await importWords(zipWith({ 'l2-o1': { glyph: 'ለውዝ', meaning: 'almond' } }));
+    await generateSlot('l2-o1', 0, fakeGenerate);
+    expect((await cardOf('l2-o1')).changed).toBe(false);
   });
 });

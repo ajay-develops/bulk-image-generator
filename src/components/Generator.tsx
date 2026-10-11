@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AppState, CardView } from '@/lib/actions';
-import { createLimiter, jobsFor, runQueue, visibleWords, type Filter, type Job, type Outcome } from '@/lib/bulk';
+import { createLimiter, jobsFor, mergeAdopted, runQueue, visibleWords, type Filter, type Job, type Outcome } from '@/lib/bulk';
 import { downloadExport, generate, imageUrl, importZip, loadState, putWord } from '@/lib/client';
-import type { SlotIndex, WordState } from '@/lib/types';
+import { wordChanged, type SlotIndex, type WordState } from '@/lib/types';
 
 import { TopBar } from './TopBar';
 import { WordCard, type SlotStatus } from './WordCard';
@@ -26,7 +26,12 @@ function changedSinceExport(state: WordState): boolean {
 export function Generator({ initial }: { initial: AppState }) {
   const [words, setWords] = useState<CardView[]>(initial.words);
   const [hasKey] = useState(initial.hasKey);
-  const [filter, setFilter] = useState<Filter>('needs');
+  const [filter, setFilterOnly] = useState<Filter>('needs');
+  // Cards chosen under the current filter stay in view until the filter changes.
+  const [keep, setKeep] = useState<ReadonlySet<string>>(new Set());
+  const keepRef = useRef(keep);
+  keepRef.current = keep;
+  const setFilter = useCallback((next: Filter) => { setKeep(new Set()); setFilterOnly(next); }, []);
   const [status, setStatus] = useState<Record<string, [SlotStatus, SlotStatus, SlotStatus]>>({});
   const [run, setRun] = useState<{ stop: () => void } | null>(null);
   const [left, setLeft] = useState(0);
@@ -39,6 +44,8 @@ export function Generator({ initial }: { initial: AppState }) {
   const busy = useRef(new Set<string>());
   const saves = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; text: string }>());
   const saving = useRef(new Map<string, Promise<void>>());
+  // Descriptions on their way to the server: not yet on disk, so not in anything the server sends back.
+  const inFlight = useRef(new Map<string, number>());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const adoptRef = useRef<(app: AppState) => void>(() => undefined);
   // Every request to the picture service queues here: three at a time, whoever asked.
@@ -51,7 +58,12 @@ export function Generator({ initial }: { initial: AppState }) {
   }, []);
 
   const patch = useCallback((key: string, change: (state: WordState) => WordState) => {
-    setWords((prev) => prev.map((w) => (w.key === key ? { ...w, state: change(w.state) } : w)));
+    setWords((prev) => prev.map((w) => {
+      if (w.key !== key) return w;
+      const state = change(w.state);
+      // The badge follows the state, so choosing a picture for a changed word clears it at once.
+      return { ...w, state, changed: wordChanged(w, state) };
+    }));
   }, []);
 
   const setSlotStatus = useCallback((key: string, slot: SlotIndex, value: SlotStatus) => {
@@ -70,9 +82,15 @@ export function Generator({ initial }: { initial: AppState }) {
     if (waiting) {
       clearTimeout(waiting.timer);
       saves.current.delete(key);
+      inFlight.current.set(key, (inFlight.current.get(key) ?? 0) + 1);
       const sent = (saving.current.get(key) ?? Promise.resolve())
         .then(() => putWord(key, { subject: waiting.text }))
-        .then(() => undefined, () => notify('The description was not saved. Check that the app is still running on the Mac.', 'error'));
+        .then(() => undefined, () => notify('The description was not saved. Check that the app is still running on the Mac.', 'error'))
+        .finally(() => {
+          const left = (inFlight.current.get(key) ?? 1) - 1;
+          if (left > 0) inFlight.current.set(key, left);
+          else inFlight.current.delete(key);
+        });
       saving.current.set(key, sent);
     }
     await saving.current.get(key);
@@ -134,11 +152,11 @@ export function Generator({ initial }: { initial: AppState }) {
     for (const slot of slots) void runJob({ key, slot });
   }, [runJob]);
 
-  const visible = useMemo(() => visibleWords(words, filter), [words, filter]);
+  const visible = useMemo(() => visibleWords(words, filter, keep), [words, filter, keep]);
   const emptySlots = useMemo(() => jobsFor(visible.filter((w) => w.subject.trim())).length, [visible]);
 
   function generateAll() {
-    const jobs = jobsFor(visibleWords(wordsRef.current, filter).filter((w) => w.subject.trim()));
+    const jobs = jobsFor(visibleWords(wordsRef.current, filter, keepRef.current).filter((w) => w.subject.trim()));
     if (!jobs.length) return;
     let remaining = jobs.length;
     setLeft(remaining);
@@ -161,7 +179,7 @@ export function Generator({ initial }: { initial: AppState }) {
     setRun(queue);
     void queue.done.then(({ made, failed }) => {
       setRun(null);
-      const notMade = jobsFor(visibleWords(wordsRef.current, filter).filter((w) => w.subject.trim())).length;
+      const notMade = jobsFor(visibleWords(wordsRef.current, filter, keepRef.current).filter((w) => w.subject.trim())).length;
       if (!notMade) notify(`All done: ${made} picture${made === 1 ? '' : 's'} made. Have a look and choose.`);
       else if (failed) notify(`${made} made, ${failed} failed, ${notMade} still to make. Press Generate all again in a few minutes.`, 'error');
       else notify(`Stopped. ${made} made, ${notMade} still to make.`);
@@ -174,6 +192,7 @@ export function Generator({ initial }: { initial: AppState }) {
     const before = wordsRef.current.find((w) => w.key === key)?.state;
     if (!before) return;
     patch(key, (old) => ({ ...old, selected: slot }));
+    setKeep((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
     try {
       // The picture's id goes too, so the server can tell if this screen is showing an older one.
       const { state } = await putWord(key, { selected: slot, ...(slot !== null && before.slots[slot] ? { id: before.slots[slot].id } : {}) });
@@ -190,10 +209,8 @@ export function Generator({ initial }: { initial: AppState }) {
 
   /** Takes the server's list, keeping what is being typed here. */
   function adopt(app: AppState) {
-    setWords((prev) => {
-      const typed = new Map(prev.filter((w) => saves.current.has(w.key)).map((w) => [w.key, w.subject]));
-      return app.words.map((w) => (typed.has(w.key) ? { ...w, subject: typed.get(w.key)! } : w));
-    });
+    const typing = new Set([...saves.current.keys(), ...inFlight.current.keys()]);
+    setWords((prev) => mergeAdopted(prev, app.words, typing));
   }
 
   adoptRef.current = adopt;
@@ -204,6 +221,7 @@ export function Generator({ initial }: { initial: AppState }) {
       await Promise.all([...saves.current.keys()].map(flushSubject));
       const app = await importZip(file);
       adopt(app);
+      setKeep(new Set());
       setStatus({});
       const need = app.words.filter((w) => !w.hasPicture).length;
       notify(`Imported ${app.words.length} words. ${need} need a picture.`);
@@ -216,8 +234,9 @@ export function Generator({ initial }: { initial: AppState }) {
 
   async function onExport(scope: 'all' | 'changed') {
     try {
-      await downloadExport(scope);
-      notify('Zip downloaded. In the content editor, press Import pictures and choose it.');
+      const { missing } = await downloadExport(scope);
+      if (missing.length) notify(`Zip downloaded, but ${missing.length} picture file(s) are missing and were left out: ${missing.join(', ')}. Press Redo on them and choose again.`, 'error');
+      else notify('Zip downloaded. In the content editor, press Import pictures and choose it.');
       adopt(await loadState());
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Could not build the zip.', 'error');

@@ -6,7 +6,7 @@ import { buildExport, exportKeys, type ExportScope } from './export';
 import { ImportError, parseEditorZip, wordChanged } from './manifest';
 import { GenerateError, generatePicture, type GenerateKind } from './nvidia';
 import { toPicture } from './picture';
-import { StaleChoice, choose, fillSlot, imagePath, readState, readWords, startingSubject, updateWord, writeWords } from './store';
+import { StaleChoice, choose, fillSlot, imagePath, noteDrawnFor, readState, readWords, startingSubject, updateWord, writeWords } from './store';
 import { SLOT_ID, WORD_KEY, emptyState, type SlotIndex, type Word, type WordState } from './types';
 
 /** A word as the screen shows it. */
@@ -63,9 +63,10 @@ async function findWord(key: string): Promise<Word> {
 }
 
 export async function saveSubject(key: string, subject: string): Promise<WordState> {
-  await findWord(key);
+  const word = await findWord(key);
   if (typeof subject !== 'string') throw new ActionError('Invalid description.', 400);
   return updateWord(key, (s) => {
+    noteDrawnFor(s, word);
     s.subject = subject.slice(0, SUBJECT_LIMIT);
   });
 }
@@ -110,7 +111,7 @@ export async function generateSlot(
   const file = imagePath(key, id);
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, picture);
-  const { state } = await fillSlot(key, index, { id, seed: made.seed, subject, createdAt: new Date().toISOString() });
+  const { state } = await fillSlot(key, index, { id, seed: made.seed, subject, createdAt: new Date().toISOString() }, word);
   return { state };
 }
 
@@ -123,15 +124,27 @@ export async function readPicture(key: string, id: string): Promise<Buffer> {
   }
 }
 
-/** Builds the zip for the editor and stamps what went out. */
-export async function exportZip(scope: ExportScope): Promise<{ zip: Uint8Array; filename: string }> {
+/**
+ * Builds the zip for the editor and stamps what went out. A chosen picture
+ * whose file is gone is left out and named in `missing`, not stamped.
+ */
+export async function exportZip(scope: ExportScope): Promise<{ zip: Uint8Array; filename: string; missing: string[] }> {
+  // Taken before reading: a choice made while the zip is being built is then
+  // newer than the stamp, and goes out with the next "changed" export.
+  const now = new Date().toISOString();
   const [words, state] = await Promise.all([readWords(), readState()]);
   if (!exportKeys(words, state, scope).length) {
     throw new ActionError(scope === 'changed' ? 'Nothing has changed since the last export.' : 'Nothing is chosen yet, so there is nothing to export.', 400);
   }
-  const now = new Date().toISOString();
-  const { zip, keys } = await buildExport(words, state, scope, readPicture, now);
-  for (const key of keys) {
+  const built = await buildExport(words, state, scope, readPicture, now);
+  const missing = built.missing.map((key) => {
+    const word = words.find((w) => w.key === key)!;
+    return `${word.glyph} (${word.meaning})`;
+  });
+  if (!built.keys.length) {
+    throw new ActionError(`The picture files are missing for: ${missing.join(', ')}. Press Redo on them and choose again.`, 400);
+  }
+  for (const key of built.keys) {
     await updateWord(key, (s) => {
       s.exportedAt = now;
     });
@@ -140,5 +153,5 @@ export async function exportZip(scope: ExportScope): Promise<{ zip: Uint8Array; 
   const d = new Date(now);
   const two = (n: number) => String(n).padStart(2, '0');
   const stamp = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}-${two(d.getHours())}-${two(d.getMinutes())}`;
-  return { zip, filename: `zema-pictures-${stamp}.zip` };
+  return { zip: built.zip, filename: `zema-pictures-${stamp}.zip`, missing };
 }

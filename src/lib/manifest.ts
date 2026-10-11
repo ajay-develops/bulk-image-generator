@@ -1,6 +1,6 @@
 import { strFromU8, unzipSync } from 'fflate';
 
-import { WORD_KEY, clean, type Word, type WordState } from './types';
+import { WORD_KEY, clean, type Word } from './types';
 
 /** The file is not something the generator can read words from. The message is shown as is. */
 export class ImportError extends Error {}
@@ -58,9 +58,4 @@ export function parseEditorZip(bytes: Uint8Array): Word[] {
   return words;
 }
 
-/** True when the word's spelling or meaning differs from what its picture was chosen for. */
-export function wordChanged(word: Word, state: WordState | undefined): boolean {
-  const made = state?.madeFor;
-  if (!made) return false;
-  return clean(made.glyph) !== clean(word.glyph) || clean(made.meaning) !== clean(word.meaning);
-}
+export { wordChanged } from './types';

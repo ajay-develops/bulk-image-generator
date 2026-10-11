@@ -57,4 +57,14 @@ describe('export', () => {
     const { zip } = await buildExport(words, s, 'all', readImage);
     expect(JSON.parse(strFromU8(unzipSync(zip)['manifest.json'])).pictures[1].meaning).toBe('lime');
   });
+
+  it('leaves out a word whose picture file is gone, and says which', async () => {
+    const flaky = async (key: string, id: string) => { if (key === 'l2-o1') throw new Error('gone'); return readImage(key, id); };
+    const { zip, keys, missing } = await buildExport(words, state, 'all', flaky);
+    expect(keys).toEqual(['l1-o6-w2']);
+    expect(missing).toEqual(['l2-o1']);
+    const files = unzipSync(zip);
+    expect(Object.keys(files).sort()).toEqual(['manifest.json', 'pictures/l1-o6-w2.webp']);
+    expect(JSON.parse(strFromU8(files['manifest.json'])).pictures).toHaveLength(1);
+  });
 });
