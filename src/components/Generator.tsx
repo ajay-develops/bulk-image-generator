@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AppState, CardView } from '@/lib/actions';
-import { jobsFor, runQueue, visibleWords, type Filter, type Job } from '@/lib/bulk';
+import { createLimiter, jobsFor, runQueue, visibleWords, type Filter, type Job, type Outcome } from '@/lib/bulk';
 import { downloadExport, generate, imageUrl, importZip, loadState, putWord } from '@/lib/client';
 import type { SlotIndex, WordState } from '@/lib/types';
 
@@ -40,7 +40,9 @@ export function Generator({ initial }: { initial: AppState }) {
   const saves = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; text: string }>());
   const saving = useRef(new Map<string, Promise<void>>());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const runRef = useRef<{ stop: () => void } | null>(null);
+  const adoptRef = useRef<(app: AppState) => void>(() => undefined);
+  // Every request to the picture service queues here: three at a time, whoever asked.
+  const limit = useRef(createLimiter(3));
 
   const notify = useCallback((message: string, tone: 'ok' | 'error' = 'ok') => {
     clearTimeout(toastTimer.current);
@@ -95,30 +97,38 @@ export function Generator({ initial }: { initial: AppState }) {
   // --- generating -------------------------------------------------------------
 
   /** Makes one picture. Only that slot is touched, so a choice made meanwhile is not undone. */
-  const runJob = useCallback(async ({ key, slot }: Job) => {
+  const runJob = useCallback(async ({ key, slot }: Job): Promise<Outcome> => {
     const id = `${key}:${slot}`;
-    if (busy.current.has(id)) return;
+    if (busy.current.has(id)) return 'made';
     busy.current.add(id);
     setSlotStatus(key, slot, 'busy');
     try {
       await flushSubject(key);
-      const { state } = await generate(key, slot);
+      const { state } = await limit.current(() => generate(key, slot));
       patch(key, (old) => {
         const slots = [...old.slots] as WordState['slots'];
         slots[slot] = state.slots[slot];
         return old.selected === slot ? { ...old, slots, selected: null } : { ...old, slots };
       });
       setSlotStatus(key, slot, '');
+      return 'made';
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not make the picture.';
-      setSlotStatus(key, slot, `error:${message}`);
-      // A missing or rejected key will fail every picture; stop asking.
+      const word = wordsRef.current.find((w) => w.key === key);
+      if (word?.state.slots[slot]) {
+        // A failed redo: the old picture stays, and there is no empty frame to put the reason in.
+        setSlotStatus(key, slot, '');
+        notify(`${word.meaning || word.glyph}: ${message}`, 'error');
+      } else {
+        setSlotStatus(key, slot, `error:${message}`);
+      }
       const kind = (error as { kind?: string }).kind;
-      if (kind === 'no-key' || kind === 'rejected-key') runRef.current?.stop();
+      // A missing or rejected key will fail every picture; a busy service may clear up.
+      return kind === 'no-key' || kind === 'rejected-key' ? 'fatal' : kind === 'busy' ? 'busy' : 'failed';
     } finally {
       busy.current.delete(id);
     }
-  }, [flushSubject, patch, setSlotStatus]);
+  }, [flushSubject, notify, patch, setSlotStatus]);
 
   const onGenerate = useCallback((key: string, slots: SlotIndex[]) => {
     for (const slot of slots) void runJob({ key, slot });
@@ -132,16 +142,29 @@ export function Generator({ initial }: { initial: AppState }) {
     if (!jobs.length) return;
     let remaining = jobs.length;
     setLeft(remaining);
-    const queue = runQueue(jobs, async (job) => {
-      await runJob(job);
-      setLeft(--remaining);
-    });
-    runRef.current = queue;
+    const queue = runQueue(
+      jobs,
+      async (job) => {
+        const outcome = await runJob(job);
+        setLeft(--remaining);
+        return outcome;
+      },
+      {
+        // Asked when the job's turn comes: a slot filled by hand since the run began is left alone.
+        wanted: (job) => {
+          const still = !wordsRef.current.find((w) => w.key === job.key)?.state.slots[job.slot] && !busy.current.has(`${job.key}:${job.slot}`);
+          if (!still) setLeft(--remaining);
+          return still;
+        },
+      },
+    );
     setRun(queue);
-    void queue.done.then(() => {
-      runRef.current = null;
+    void queue.done.then(({ made, failed }) => {
       setRun(null);
-      notify(remaining > 0 ? `Stopped. ${remaining} picture(s) were not made.` : 'All done. Have a look and choose.');
+      const notMade = jobsFor(visibleWords(wordsRef.current, filter).filter((w) => w.subject.trim())).length;
+      if (!notMade) notify(`All done: ${made} picture${made === 1 ? '' : 's'} made. Have a look and choose.`);
+      else if (failed) notify(`${made} made, ${failed} failed, ${notMade} still to make. Press Generate all again in a few minutes.`, 'error');
+      else notify(`Stopped. ${made} made, ${notMade} still to make.`);
     });
   }
 
@@ -152,11 +175,14 @@ export function Generator({ initial }: { initial: AppState }) {
     if (!before) return;
     patch(key, (old) => ({ ...old, selected: slot }));
     try {
-      const { state } = await putWord(key, { selected: slot });
+      // The picture's id goes too, so the server can tell if this screen is showing an older one.
+      const { state } = await putWord(key, { selected: slot, ...(slot !== null && before.slots[slot] ? { id: before.slots[slot].id } : {}) });
       patch(key, (old) => ({ ...old, selected: state.selected, selectedAt: state.selectedAt, madeFor: state.madeFor }));
     } catch (error) {
       patch(key, (old) => ({ ...old, selected: before.selected }));
       notify(`Not saved: ${error instanceof Error ? error.message : 'connection problem'}`, 'error');
+      // Another device changed this word's pictures: show what is really there.
+      if ((error as { status?: number }).status === 409) void loadState().then(adoptRef.current, () => undefined);
     }
   }, [notify, patch]);
 
@@ -169,6 +195,8 @@ export function Generator({ initial }: { initial: AppState }) {
       return app.words.map((w) => (typed.has(w.key) ? { ...w, subject: typed.get(w.key)! } : w));
     });
   }
+
+  adoptRef.current = adopt;
 
   async function onImport(file: File) {
     setImporting(true);

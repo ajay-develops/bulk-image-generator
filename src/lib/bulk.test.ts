@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CardView } from './actions';
-import { jobsFor, runQueue, visibleWords, type Job } from './bulk';
+import { createLimiter, jobsFor, runQueue, visibleWords, type Job } from './bulk';
 import type { Slot, WordState } from './types';
 
 const filled: Slot = { id: 'aaaaaaaaaaaa', seed: 1, subject: 'x', createdAt: '2026-10-11T00:00:00.000Z' };
@@ -52,6 +52,59 @@ describe('bulk', () => {
   });
 
   it('finishes at once with nothing to do', async () => {
-    await expect(runQueue([], async () => undefined).done).resolves.toBeUndefined();
+    await expect(runQueue([], async () => undefined).done).resolves.toEqual({ made: 0, failed: 0, notRun: 0 });
+  });
+
+  it('skips a job that is no longer wanted when its turn comes', async () => {
+    const ran: string[] = [];
+    const result = await runQueue(tenJobs, async (j) => { ran.push(j.key); }, { wanted: (j) => j.key !== 'w7' }).done;
+    expect(ran).not.toContain('w7');
+    expect(result).toEqual({ made: 9, failed: 0, notRun: 1 });
+  });
+
+  it('reports how many were made, failed and never run', async () => {
+    const q = runQueue(tenJobs, async (j) => (j.key === 'w1' ? 'failed' : 'made'));
+    expect(await q.done).toEqual({ made: 9, failed: 1, notRun: 0 });
+    const stopped = runQueue(tenJobs, async () => { await tick(); });
+    stopped.stop();
+    expect(await stopped.done).toEqual({ made: 3, failed: 0, notRun: 7 });
+  });
+
+  it('gives up after six busy answers in a row', async () => {
+    let asked = 0;
+    const result = await runQueue(Array.from({ length: 40 }, (_, i) => ({ key: `w${i}`, slot: 0 as const })), async () => { asked++; return 'busy'; }, { width: 1 }).done;
+    expect(asked).toBe(6);
+    expect(result).toEqual({ made: 0, failed: 6, notRun: 34 });
+  });
+
+  it('a picture that works resets the busy count', async () => {
+    let n = 0;
+    const result = await runQueue(tenJobs, async () => (++n % 3 === 0 ? 'made' : 'busy'), { width: 1 }).done;
+    expect(result.notRun).toBe(0);
+  });
+
+  it('stops at once on a problem that would fail every picture', async () => {
+    let asked = 0;
+    const result = await runQueue(tenJobs, async () => { asked++; return 'fatal'; }, { width: 1 }).done;
+    expect(asked).toBe(1);
+    expect(result).toEqual({ made: 0, failed: 1, notRun: 9 });
+  });
+});
+
+describe('createLimiter', () => {
+  it('never lets more than three run at once, however many are asked for', async () => {
+    const limit = createLimiter(3);
+    let running = 0, peak = 0;
+    const results = await Promise.all(Array.from({ length: 12 }, (_, i) => limit(async () => {
+      peak = Math.max(peak, ++running); await tick(); running--; return i;
+    })));
+    expect(peak).toBe(3);
+    expect(results).toEqual(Array.from({ length: 12 }, (_, i) => i));
+  });
+
+  it('carries on after one of them throws', async () => {
+    const limit = createLimiter(1);
+    await expect(limit(async () => { throw new Error('x'); })).rejects.toThrow('x');
+    await expect(limit(async () => 'ok')).resolves.toBe('ok');
   });
 });

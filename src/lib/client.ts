@@ -5,8 +5,9 @@ import type { SlotIndex, WordState } from './types';
 async function json<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => null)) as (T & { error?: string }) | null;
   if (!response.ok || !body) {
-    const error = new Error(body?.error ?? `The app on this Mac did not answer properly (${response.status}).`) as Error & { kind?: string };
+    const error = new Error(body?.error ?? `The app on this Mac did not answer properly (${response.status}).`) as Error & { kind?: string; status?: number };
     error.kind = (body as { kind?: string } | null)?.kind;
+    error.status = response.status;
     throw error;
   }
   return body;
@@ -20,7 +21,7 @@ export async function importZip(file: File): Promise<AppState> {
   return json(await fetch('/api/import', { method: 'POST', body: file, headers: { 'Content-Type': 'application/zip' } }));
 }
 
-export async function putWord(key: string, body: { subject?: string; selected?: SlotIndex | null }): Promise<{ state: WordState }> {
+export async function putWord(key: string, body: { subject?: string; selected?: SlotIndex | null; id?: string }): Promise<{ state: WordState }> {
   return json(await fetch(`/api/words/${key}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true }));
 }
 

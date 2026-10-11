@@ -6,7 +6,7 @@ import { buildExport, exportKeys, type ExportScope } from './export';
 import { ImportError, parseEditorZip, wordChanged } from './manifest';
 import { GenerateError, generatePicture, type GenerateKind } from './nvidia';
 import { toPicture } from './picture';
-import { choose, fillSlot, imagePath, readState, readWords, startingSubject, updateWord, writeWords } from './store';
+import { StaleChoice, choose, fillSlot, imagePath, readState, readWords, startingSubject, updateWord, writeWords } from './store';
 import { SLOT_ID, WORD_KEY, emptyState, type SlotIndex, type Word, type WordState } from './types';
 
 /** A word as the screen shows it. */
@@ -22,7 +22,7 @@ export type AppState = { words: CardView[]; hasKey: boolean };
 
 /** Something the person at the screen can be told. The routes turn it into a response. */
 export class ActionError extends Error {
-  constructor(message: string, readonly status: 400 | 404 | 502, readonly kind?: GenerateKind) {
+  constructor(message: string, readonly status: 400 | 404 | 409 | 502, readonly kind?: GenerateKind) {
     super(message);
   }
 }
@@ -70,12 +70,13 @@ export async function saveSubject(key: string, subject: string): Promise<WordSta
   });
 }
 
-export async function chooseSlot(key: string, index: SlotIndex | null): Promise<WordState> {
+export async function chooseSlot(key: string, index: SlotIndex | null, id?: string): Promise<WordState> {
   const word = await findWord(key);
   if (index !== null && ![0, 1, 2].includes(index)) throw new ActionError('Invalid choice.', 400);
   try {
-    return await choose(key, index, word);
+    return await choose(key, index, word, typeof id === 'string' ? id : undefined);
   } catch (error) {
+    if (error instanceof StaleChoice) throw new ActionError(error.message, 409);
     throw new ActionError(error instanceof Error ? error.message : 'Could not save the choice.', 400);
   }
 }

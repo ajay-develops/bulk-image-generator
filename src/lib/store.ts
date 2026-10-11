@@ -93,8 +93,15 @@ export async function fillSlot(key: string, index: SlotIndex, slot: Slot): Promi
   return { state, replaced };
 }
 
-/** Chooses a slot, or clears the choice with null. */
-export async function choose(key: string, index: SlotIndex | null, word: Word): Promise<WordState> {
+/** The picture in that slot is not the one the screen was showing. */
+export class StaleChoice extends Error {}
+
+/**
+ * Chooses a slot, or clears the choice with null. `id` is the picture the
+ * screen was showing: a phone left open while the Mac redid that slot must
+ * not end up choosing a picture nobody looked at.
+ */
+export async function choose(key: string, index: SlotIndex | null, word: Word, id?: string): Promise<WordState> {
   return updateWord(key, (s) => {
     if (index === null) {
       s.selected = null;
@@ -103,6 +110,7 @@ export async function choose(key: string, index: SlotIndex | null, word: Word): 
       return;
     }
     if (!s.slots[index]) throw new Error('There is no picture in that slot.');
+    if (id !== undefined && s.slots[index].id !== id) throw new StaleChoice('That picture has changed since this page loaded it. Have another look and choose again.');
     s.selected = index;
     s.selectedAt = new Date().toISOString();
     s.madeFor = { glyph: clean(word.glyph), meaning: clean(word.meaning) };

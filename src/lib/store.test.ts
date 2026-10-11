@@ -88,4 +88,12 @@ describe('store', () => {
     expect(startingSubject({ ...word, key: 'l9-o9', meaning: 'spoon' }, undefined)).toBe('spoon');
     expect(startingSubject(word, { ...emptyState(), subject: 'mine' })).toBe('mine');
   });
+
+  it('refuses a choice made from a screen that shows an older picture', async () => {
+    await fillSlot('l1-o1', 0, slot('aaaaaaaaaaaa'));
+    await fillSlot('l1-o1', 0, slot('cccccccccccc'));
+    await expect(choose('l1-o1', 0, word, 'aaaaaaaaaaaa')).rejects.toThrow(/changed/i);
+    expect((await readState())['l1-o1'].selected).toBeNull();
+    expect((await choose('l1-o1', 0, word, 'cccccccccccc')).selected).toBe(0);
+  });
 });

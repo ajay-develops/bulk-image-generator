@@ -137,4 +137,12 @@ describe('actions', () => {
     await chooseSlot('l2-o1', 1);
     expect(Object.keys(unzipSync((await exportZip('changed')).zip))).toContain('pictures/l2-o1.webp');
   });
+
+  it('answers 409 when the chosen picture is not the one in that slot any more', async () => {
+    await importWords(zip);
+    const first = (await generateSlot('l2-o1', 0, fakeGenerate)).state.slots[0]!.id;
+    await generateSlot('l2-o1', 0, fakeGenerate);
+    await expect(chooseSlot('l2-o1', 0, first)).rejects.toMatchObject({ status: 409 });
+    expect((await cardOf('l2-o1')).state.selected).toBeNull();
+  });
 });
