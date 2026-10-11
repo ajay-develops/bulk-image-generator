@@ -7,7 +7,7 @@ const blank = (width: number, height: number) =>
   sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
 
 describe('toPicture', () => {
-  it.each([[1152, 768], [1024, 1024], [600, 400], [2000, 900]])('turns %ix%i into 1152x768 webp', async (width, height) => {
+  it.each([[1152, 768], [1216, 832], [1024, 1024], [600, 400], [2000, 900]])('turns %ix%i into 1152x768 webp', async (width, height) => {
     const meta = await sharp(await toPicture(await blank(width, height))).metadata();
     expect([meta.width, meta.height, meta.format, meta.hasAlpha]).toEqual([1152, 768, 'webp', false]);
   });

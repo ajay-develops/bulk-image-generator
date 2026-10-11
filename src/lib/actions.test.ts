@@ -41,7 +41,7 @@ describe('actions', () => {
   it('imports words and reports them with their starting description', async () => {
     const app = await importWords(zip);
     expect(app.words.map((w) => w.key)).toEqual(['l1-o6-w2', 'l2-o1']);
-    expect(app.words[0]).toMatchObject({ subject: 'a cute cartoon monkey sitting', changed: false });
+    expect(app.words[0]).toMatchObject({ subject: 'a monkey sitting on the ground, full body, natural brown fur and a long tail', changed: false });
     expect(app.words[0].state).toEqual({ slots: [null, null, null], selected: null });
     expect(app.words[1].subject).toBe('lemon');
   });
@@ -76,7 +76,7 @@ describe('actions', () => {
     await importWords(zip);
     let asked = '';
     await generateSlot('l1-o6-w2', 0, async (subject) => { asked = subject; return fakeGenerate(); });
-    expect(asked).toBe('a cute cartoon monkey sitting');
+    expect(asked).toBe('a monkey sitting on the ground, full body, natural brown fur and a long tail');
   });
 
   it('refuses to generate from a blank description', async () => {

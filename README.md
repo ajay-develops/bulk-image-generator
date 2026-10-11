@@ -55,9 +55,19 @@ Every picture is **1152×768 WebP** on a white background. That is the exact
 size and shape of the pictures the app already ships, and the app crops a
 picture to fill its frame, so a different shape would be cropped differently.
 
-Each description is sent with one fixed style line (flat children's-app
-illustration, single subject, plain white background, no text), so the whole
-set looks like one set. The line is `STYLE` in `src/lib/nvidia.ts`.
+The picture service is asked for 1216×832, not 1152×768: at the app's own
+size it answers with a soft, blurred picture, and at 1216×832 it is sharp. The
+result is trimmed by about ten rows top and bottom and scaled to 1152×768.
+
+Each description is sent with one fixed style line (realistic, detailed
+picture-dictionary illustration, true-to-life details, single subject, plain
+white background, no words), so the whole set looks like one set. The app is
+for children and teenagers, so the pictures show the real thing and not a
+simplified cartoon. The line is `STYLE` in `src/lib/nvidia.ts`.
+
+Two things learned the hard way about wording descriptions: the service
+refuses prompts containing the word "seven" (say "the number 7"), and a
+number draws best as "the number 7 written as one large bold digit".
 
 `seed/subjects.json` holds hand-written descriptions for some words. They are
 only the starting text of **What to draw**; whatever you type replaces them.

@@ -10,7 +10,7 @@ const w = (key: string, glyph: string, meaning: string): Word => ({
 const words = [w('l1-o6-w2', 'ህበይ', 'monkey'), w('l2-o1', 'ለሚን', 'lemon'), w('l3-o1', 'ሐ', 'none chosen')];
 const slot = (id: string, subject: string) => ({ id, seed: 1, subject, createdAt: '2026-10-10T00:00:00.000Z' });
 const state: StateMap = {
-  'l1-o6-w2': { slots: [slot('aaaaaaaaaaaa', 'a cute cartoon monkey sitting'), null, null], selected: 0, selectedAt: '2026-10-10T10:00:00.000Z', madeFor: { glyph: 'ህበይ', meaning: 'monkey' } },
+  'l1-o6-w2': { slots: [slot('aaaaaaaaaaaa', 'a monkey sitting on the ground, full body, natural brown fur and a long tail'), null, null], selected: 0, selectedAt: '2026-10-10T10:00:00.000Z', madeFor: { glyph: 'ህበይ', meaning: 'monkey' } },
   'l2-o1': { slots: [slot('cccccccccccc', 'other'), slot('bbbbbbbbbbbb', 'a lemon'), null], selected: 1, selectedAt: '2026-10-10T10:00:00.000Z', madeFor: { glyph: 'ለሚን', meaning: 'lemon' } },
   'l3-o1': { slots: [slot('dddddddddddd', 'x'), null, null], selected: null },
   'l9-o1': { slots: [slot('eeeeeeeeeeee', 'gone'), null, null], selected: 0, selectedAt: '2026-10-10T10:00:00.000Z' },
@@ -27,7 +27,7 @@ describe('export', () => {
     expect(JSON.parse(strFromU8(files['manifest.json']))).toEqual({
       format: 'zema-pictures', version: 1, exportedAt: '2026-10-11T00:00:00.000Z',
       pictures: [
-        { key: 'l1-o6-w2', id: 'vocab-geez-l1-o6-w2', file: 'pictures/l1-o6-w2.webp', glyph: 'ህበይ', meaning: 'monkey', subject: 'a cute cartoon monkey sitting' },
+        { key: 'l1-o6-w2', id: 'vocab-geez-l1-o6-w2', file: 'pictures/l1-o6-w2.webp', glyph: 'ህበይ', meaning: 'monkey', subject: 'a monkey sitting on the ground, full body, natural brown fur and a long tail' },
         { key: 'l2-o1', id: 'vocab-geez-l2-o1', file: 'pictures/l2-o1.webp', glyph: 'ለሚን', meaning: 'lemon', subject: 'a lemon' },
       ],
     });

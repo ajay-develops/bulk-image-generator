@@ -24,7 +24,10 @@ describe('generatePicture', () => {
     const calls = stub([ok('AAAA')]);
     const out = await generatePicture('a red umbrella', { fetch: calls.fetch, seed: 7, apiKey: 'k', wait });
     const body = JSON.parse(calls.requests[0].body);
-    expect(body).toMatchObject({ width: 1152, height: 768, steps: 30, cfg_scale: 3.5, mode: 'base', seed: 7 });
+    // Asked for at a size the model draws sharply; cut to the app's 1152x768 afterwards.
+    expect(body).toMatchObject({ width: 1216, height: 832, steps: 30, cfg_scale: 3.5, mode: 'base', seed: 7 });
+    expect(STYLE).toMatch(/realistic/);
+    expect(STYLE).not.toMatch(/children|cute|flat vector/);
     expect(body.prompt).toBe(`a red umbrella, ${STYLE}`);
     expect(calls.requests[0].headers.Authorization).toBe('Bearer k');
     expect(calls.requests[0].url).toBe('https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev');

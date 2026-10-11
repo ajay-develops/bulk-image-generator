@@ -84,7 +84,7 @@ describe('store', () => {
   });
 
   it('starts the description from saved text, then the carried-over one, then the meaning', () => {
-    expect(startingSubject({ ...word, key: 'l1-o6-w2' }, undefined)).toBe('a cute cartoon monkey sitting');
+    expect(startingSubject({ ...word, key: 'l1-o6-w2' }, undefined)).toBe('a monkey sitting on the ground, full body, natural brown fur and a long tail');
     expect(startingSubject({ ...word, key: 'l9-o9', meaning: 'spoon' }, undefined)).toBe('spoon');
     expect(startingSubject(word, { ...emptyState(), subject: 'mine' })).toBe('mine');
   });

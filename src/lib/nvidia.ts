@@ -1,13 +1,17 @@
 import { randomInt } from 'node:crypto';
 
-import { PICTURE } from './types';
+import { REQUEST } from './types';
 
 const URL = 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev';
 const ATTEMPTS = 4;
 
-/** Added to every description, so all the pictures look like one set. */
+/**
+ * Added to every description, so all the pictures look like one set. The app
+ * is for children and teenagers: the pictures should show the real thing, with
+ * the details that make it recognisable, not a simplified cartoon of it.
+ */
 export const STYLE =
-  "clean flat vector illustration for a children's vocabulary app, crisp bold shapes, smooth outlines, bright cheerful colors, single subject centered and fully visible, plain pure white background, soft ground shadow, no text, no letters, no numbers, no watermark";
+  'realistic detailed illustration for an educational picture dictionary, true-to-life shape, proportions, colors and details, natural and not cartoonish, clean crisp linework with soft shading, the subject large in the frame, centered and fully visible, plain pure white background, sharp focus, no captions, no words, no watermark';
 
 export type GenerateKind = 'no-key' | 'rejected-key' | 'filtered' | 'busy' | 'failed';
 
@@ -29,7 +33,7 @@ const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 const newSeed = () => randomInt(1, 2_000_000_000);
 
 /**
- * One picture from NVIDIA's hosted FLUX.1-dev, at the app's size. A busy
+ * One picture from NVIDIA's hosted FLUX.1-dev, at the size it draws sharply. A busy
  * service is waited out and a filtered picture is tried again with another
  * seed, four attempts in all.
  */
@@ -49,8 +53,8 @@ export async function generatePicture(subject: string, options: Options = {}): P
         headers: { Authorization: `Bearer ${key}`, Accept: 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: `${subject}, ${STYLE}`,
-          width: PICTURE.width,
-          height: PICTURE.height,
+          width: REQUEST.width,
+          height: REQUEST.height,
           seed,
           steps: 30,
           cfg_scale: 3.5,

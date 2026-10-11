@@ -49,6 +49,15 @@ export type StateMap = Record<string, WordState>;
 /** Every picture the app ships is this size and format. */
 export const PICTURE = { width: 1152, height: 768, quality: 82 } as const;
 
+/**
+ * The size asked of the picture service. Not the app's own size on purpose:
+ * asked for 1152×768 the service answers with a soft, blurred picture, while
+ * at the sizes the model was trained on it is sharp. 1216×832 is the nearest
+ * of those to the app's 3:2 shape; toPicture then trims about ten rows off the
+ * top and bottom and scales it to 1152×768.
+ */
+export const REQUEST = { width: 1216, height: 832 } as const;
+
 export const WORD_KEY = /^l\d+-o\d(-w[2-9])?$/;
 export const SLOT_ID = /^[a-f0-9]{12}$/;
 
