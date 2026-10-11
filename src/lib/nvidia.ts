@@ -1,5 +1,6 @@
 import { randomInt } from 'node:crypto';
 
+import { isBlank } from './picture';
 import { REQUEST } from './types';
 
 const URL = 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev';
@@ -83,8 +84,11 @@ export async function generatePicture(subject: string, options: Options = {}): P
 
     const body = (await response.json().catch(() => null)) as { artifacts?: { base64?: string; finishReason?: string }[] } | null;
     const art = body?.artifacts?.[0];
-    if (art?.finishReason === 'SUCCESS' && art.base64) return { image: Buffer.from(art.base64, 'base64'), seed };
-    // Filtered, or an empty answer: another seed usually gets through.
+    if (art?.finishReason === 'SUCCESS' && art.base64) {
+      const image = Buffer.from(art.base64, 'base64');
+      if (!(await isBlank(image))) return { image, seed };
+    }
+    // Filtered, an empty answer, or a blank white picture: another seed usually gets through.
     last = new GenerateError('The picture service would not draw this. Try describing it differently.', 'filtered');
     seed = newSeed();
   }

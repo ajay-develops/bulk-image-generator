@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
 import { GenerateError, STYLE, generatePicture } from './nvidia';
@@ -55,6 +56,20 @@ describe('generatePicture', () => {
     const out = await generatePicture('x', { fetch: calls.fetch, seed: 10, apiKey: 'k', wait });
     expect(out.seed).not.toBe(10);
     expect(JSON.parse(calls.requests[1].body).seed).toBe(out.seed);
+  });
+
+  it('tries another seed when the service sends back an empty white picture', async () => {
+    const white = (await sharp({ create: { width: 1216, height: 832, channels: 3, background: '#ffffff' } }).jpeg().toBuffer()).toString('base64');
+    const calls = stub([ok(white), ok('AAAA')]);
+    const out = await generatePicture('x', { fetch: calls.fetch, seed: 10, apiKey: 'k', wait });
+    expect(calls.requests).toHaveLength(2);
+    expect(out.seed).not.toBe(10);
+  });
+
+  it('gives up as filtered when every answer is empty', async () => {
+    const white = (await sharp({ create: { width: 1216, height: 832, channels: 3, background: '#ffffff' } }).jpeg().toBuffer()).toString('base64');
+    const calls = stub([ok(white), ok(white), ok(white), ok(white)]);
+    await expect(generatePicture('x', { fetch: calls.fetch, apiKey: 'k', wait })).rejects.toMatchObject({ kind: 'filtered' });
   });
 
   it.each([
