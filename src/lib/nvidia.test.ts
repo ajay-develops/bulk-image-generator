@@ -26,7 +26,8 @@ describe('generatePicture', () => {
     const out = await generatePicture('a red umbrella', { fetch: calls.fetch, seed: 7, apiKey: 'k', wait });
     const body = JSON.parse(calls.requests[0].body);
     // Asked for at a size the model draws sharply; cut to the app's 1152x768 afterwards.
-    expect(body).toMatchObject({ width: 1216, height: 832, steps: 30, cfg_scale: 3.5, mode: 'base', seed: 7 });
+    // 45 steps and guidance 5: at 30 and 3.5 about half the pictures came back soft.
+    expect(body).toMatchObject({ width: 1216, height: 832, steps: 45, cfg_scale: 5, mode: 'base', seed: 7 });
     expect(STYLE).toMatch(/realistic/);
     expect(STYLE).not.toMatch(/children|cute|flat vector/);
     expect(body.prompt).toBe(`a red umbrella, ${STYLE}`);
@@ -70,6 +71,36 @@ describe('generatePicture', () => {
     const white = (await sharp({ create: { width: 1216, height: 832, channels: 3, background: '#ffffff' } }).jpeg().toBuffer()).toString('base64');
     const calls = stub([ok(white), ok(white), ok(white), ok(white)]);
     await expect(generatePicture('x', { fetch: calls.fetch, apiKey: 'k', wait })).rejects.toMatchObject({ kind: 'filtered' });
+  });
+
+  const square = async (blur: number) => {
+    const img = sharp({ create: { width: 1216, height: 832, channels: 3, background: '#ffffff' } })
+      .composite([{ input: await sharp({ create: { width: 400, height: 400, channels: 3, background: '#222222' } }).png().toBuffer(), left: 400, top: 200 }]);
+    const png = await img.png().toBuffer();
+    return (blur ? await sharp(png).blur(blur).png().toBuffer() : png).toString('base64');
+  };
+
+  it('tries another seed when the picture comes back soft', async () => {
+    const calls = stub([ok(await square(6)), ok(await square(0))]);
+    const out = await generatePicture('x', { fetch: calls.fetch, seed: 10, apiKey: 'k', wait });
+    expect(calls.requests).toHaveLength(2);
+    expect(out.seed).not.toBe(10);
+    expect(out.image.equals(Buffer.from(await square(0), 'base64'))).toBe(true);
+  });
+
+  it('settles for the least soft picture when none comes back crisp', async () => {
+    const calls = stub([ok(await square(5)), ok(await square(3)), ok(await square(4)), ok(await square(4.5))]);
+    const out = await generatePicture('x', { fetch: calls.fetch, apiKey: 'k', wait });
+    expect(calls.requests).toHaveLength(4);
+    expect(out.image.equals(Buffer.from(await square(3), 'base64'))).toBe(true);
+    expect(JSON.parse(calls.requests[1].body).seed).toBe(out.seed);
+  });
+
+  it('keeps the seed it was told to keep, soft or not', async () => {
+    const calls = stub([ok(await square(6))]);
+    const out = await generatePicture('x', { fetch: calls.fetch, seed: 10, sameSeed: true, apiKey: 'k', wait });
+    expect(calls.requests).toHaveLength(1);
+    expect(out.seed).toBe(10);
   });
 
   it.each([

@@ -34,3 +34,33 @@ export async function isBlank(input: Buffer): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * How crisp a picture is, from 0 to about 1: at each strong edge, how much of
+ * the change in brightness happens between two neighbouring pixels. A crisp
+ * edge scores near 1; an edge smeared over several pixels scores about 0.3.
+ * The value is the upper quartile over all edges. Null when the picture has
+ * too few edges to say (a plain shape on white).
+ */
+export async function sharpness(input: Buffer): Promise<number | null> {
+  const W = PICTURE.width, H = PICTURE.height;
+  let d: Buffer;
+  try {
+    d = await sharp(input).resize(W, H, { fit: 'fill' }).flatten({ background: '#ffffff' }).greyscale().raw().toBuffer();
+  } catch {
+    return null;
+  }
+  const ratios: number[] = [];
+  for (let y = 2; y < H - 2; y += 2) {
+    for (let x = 2; x < W - 2; x += 2) {
+      const i = y * W + x;
+      const across = Math.abs(d[i + 2] - d[i - 2]);
+      const down = Math.abs(d[i + 2 * W] - d[i - 2 * W]);
+      if (across > 50) ratios.push(Math.max(Math.abs(d[i + 1] - d[i]), Math.abs(d[i] - d[i - 1])) / across);
+      if (down > 50) ratios.push(Math.max(Math.abs(d[i + W] - d[i]), Math.abs(d[i] - d[i - W])) / down);
+    }
+  }
+  if (ratios.length < 200) return null;
+  ratios.sort((a, b) => a - b);
+  return Math.round(ratios[Math.floor(ratios.length * 0.75)] * 100) / 100;
+}

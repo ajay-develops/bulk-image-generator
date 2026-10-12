@@ -48,8 +48,9 @@ export function Generator({ initial }: { initial: AppState }) {
   const inFlight = useRef(new Map<string, number>());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const adoptRef = useRef<(app: AppState) => void>(() => undefined);
-  // Every request to the picture service queues here: three at a time, whoever asked.
-  const limit = useRef(createLimiter(3));
+  // Every request to the picture service queues here: two at a time, whoever asked.
+  // A third at once is turned away by the service with an error.
+  const limit = useRef(createLimiter(2));
 
   const notify = useCallback((message: string, tone: 'ok' | 'error' = 'ok') => {
     clearTimeout(toastTimer.current);
@@ -115,17 +116,19 @@ export function Generator({ initial }: { initial: AppState }) {
   // --- generating -------------------------------------------------------------
 
   /** Makes one picture. Only that slot is touched, so a choice made meanwhile is not undone. */
-  const runJob = useCallback(async ({ key, slot }: Job): Promise<Outcome> => {
+  const runJob = useCallback(async ({ key, slot, sharpen }: Job): Promise<Outcome> => {
     const id = `${key}:${slot}`;
     if (busy.current.has(id)) return 'made';
     busy.current.add(id);
     setSlotStatus(key, slot, 'busy');
     try {
       await flushSubject(key);
-      const { state } = await limit.current(() => generate(key, slot));
+      const { state } = await limit.current(() => generate(key, slot, sharpen));
       patch(key, (old) => {
         const slots = [...old.slots] as WordState['slots'];
         slots[slot] = state.slots[slot];
+        // A sharpened picture is the same picture, so a choice of it stands.
+        if (sharpen) return old.selected === slot ? { ...old, slots, selectedAt: state.selectedAt } : { ...old, slots };
         return old.selected === slot ? { ...old, slots, selected: null } : { ...old, slots };
       });
       setSlotStatus(key, slot, '');
@@ -151,6 +154,7 @@ export function Generator({ initial }: { initial: AppState }) {
   const onGenerate = useCallback((key: string, slots: SlotIndex[]) => {
     for (const slot of slots) void runJob({ key, slot });
   }, [runJob]);
+  const onSharpen = useCallback((key: string, slot: SlotIndex) => void runJob({ key, slot, sharpen: true }), [runJob]);
 
   const visible = useMemo(() => visibleWords(words, filter, keep), [words, filter, keep]);
   const emptySlots = useMemo(() => jobsFor(visible.filter((w) => w.subject.trim())).length, [visible]);
@@ -313,6 +317,7 @@ export function Generator({ initial }: { initial: AppState }) {
                     onSubject={onSubject}
                     onSubjectDone={onSubjectDone}
                     onGenerate={onGenerate}
+                    onSharpen={onSharpen}
                     onChoose={onChoose}
                     onZoom={onZoom}
                   />

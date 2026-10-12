@@ -5,7 +5,7 @@ import { dirname } from 'node:path';
 import { buildExport, exportKeys, type ExportScope } from './export';
 import { ImportError, parseEditorZip, wordChanged } from './manifest';
 import { GenerateError, generatePicture, type GenerateKind } from './nvidia';
-import { toPicture } from './picture';
+import { sharpness, toPicture } from './picture';
 import { StaleChoice, choose, fillSlot, imagePath, noteDrawnFor, readState, readWords, startingSubject, updateWord, writeWords } from './store';
 import { SLOT_ID, WORD_KEY, emptyState, type SlotIndex, type Word, type WordState } from './types';
 
@@ -82,6 +82,34 @@ export async function chooseSlot(key: string, index: SlotIndex | null, id?: stri
   }
 }
 
+/** Asks the picture service, and turns what comes back into the app's picture. */
+async function draw(
+  subject: string,
+  generate: typeof generatePicture,
+  options?: { seed: number; sameSeed: boolean },
+): Promise<{ picture: Buffer; seed: number }> {
+  let made: { image: Buffer; seed: number };
+  try {
+    made = await generate(subject, options);
+  } catch (error) {
+    if (error instanceof GenerateError) throw new ActionError(error.message, 502, error.kind);
+    throw error;
+  }
+  try {
+    return { picture: await toPicture(made.image), seed: made.seed };
+  } catch {
+    throw new ActionError('The picture service sent something that is not a picture. Try again.', 502, 'failed');
+  }
+}
+
+async function store(key: string, picture: Buffer): Promise<string> {
+  const id = randomBytes(6).toString('hex');
+  const file = imagePath(key, id);
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, picture);
+  return id;
+}
+
 /** Makes one picture for one slot. On any failure the slot is left exactly as it was. */
 export async function generateSlot(
   key: string,
@@ -92,27 +120,30 @@ export async function generateSlot(
   if (![0, 1, 2].includes(index)) throw new ActionError('Invalid slot.', 400);
   const subject = startingSubject(word, (await readState())[key]).trim();
   if (!subject) throw new ActionError('Write what to draw first.', 400);
+  const { picture, seed } = await draw(subject, generate);
+  const id = await store(key, picture);
+  const slot = { id, seed, subject, createdAt: new Date().toISOString(), sharp: await sharpness(picture) };
+  return { state: (await fillSlot(key, index, slot, word)).state };
+}
 
-  let made: { image: Buffer; seed: number };
-  try {
-    made = await generate(subject);
-  } catch (error) {
-    if (error instanceof GenerateError) throw new ActionError(error.message, 502, error.kind);
-    throw error;
-  }
-  let picture: Buffer;
-  try {
-    picture = await toPicture(made.image);
-  } catch {
-    throw new ActionError('The picture service sent something that is not a picture. Try again.', 502, 'failed');
-  }
-
-  const id = randomBytes(6).toString('hex');
-  const file = imagePath(key, id);
-  await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, picture);
-  const { state } = await fillSlot(key, index, { id, seed: made.seed, subject, createdAt: new Date().toISOString() }, word);
-  return { state };
+/**
+ * Redraws the picture in a slot from its own seed and description. With the
+ * service's current settings that gives the same picture, crisp. If it was
+ * the chosen one it stays chosen.
+ */
+export async function sharpenSlot(
+  key: string,
+  index: SlotIndex,
+  generate: typeof generatePicture = generatePicture,
+): Promise<{ state: WordState }> {
+  const word = await findWord(key);
+  if (![0, 1, 2].includes(index)) throw new ActionError('Invalid slot.', 400);
+  const old = (await readState())[key]?.slots[index];
+  if (!old) throw new ActionError('There is no picture in that slot to sharpen.', 400);
+  const { picture, seed } = await draw(old.subject, generate, { seed: old.seed, sameSeed: true });
+  const id = await store(key, picture);
+  const slot = { id, seed, subject: old.subject, createdAt: new Date().toISOString(), sharp: await sharpness(picture) };
+  return { state: (await fillSlot(key, index, slot, word, true)).state };
 }
 
 export async function readPicture(key: string, id: string): Promise<Buffer> {

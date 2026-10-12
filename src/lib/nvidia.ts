@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 
-import { isBlank } from './picture';
-import { REQUEST } from './types';
+import { isBlank, sharpness } from './picture';
+import { REQUEST, SOFT } from './types';
 
 const URL = 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-dev';
 const ATTEMPTS = 4;
@@ -26,6 +26,8 @@ export class GenerateError extends Error {
 type Options = {
   fetch?: typeof fetch;
   seed?: number;
+  /** Redraw exactly this seed and take what comes, soft or not. */
+  sameSeed?: boolean;
   wait?: (ms: number) => Promise<void>;
   apiKey?: string;
 };
@@ -35,8 +37,8 @@ const newSeed = () => randomInt(1, 2_000_000_000);
 
 /**
  * One picture from NVIDIA's hosted FLUX.1-dev, at the size it draws sharply. A busy
- * service is waited out and a filtered picture is tried again with another
- * seed, four attempts in all.
+ * service is waited out, and a filtered, blank or soft picture is tried again
+ * with another seed, four attempts in all.
  */
 export async function generatePicture(subject: string, options: Options = {}): Promise<{ image: Buffer; seed: number }> {
   const key = options.apiKey ?? process.env.NVIDIA_API_KEY;
@@ -45,6 +47,8 @@ export async function generatePicture(subject: string, options: Options = {}): P
   const wait = options.wait ?? sleep;
   let seed = options.seed ?? newSeed();
   let last: GenerateError = new GenerateError('The picture service did not answer.', 'busy');
+  // The least soft picture so far, kept in case none comes back crisp.
+  let best: { image: Buffer; seed: number; sharp: number } | null = null;
 
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     let response: Response;
@@ -57,8 +61,10 @@ export async function generatePicture(subject: string, options: Options = {}): P
           width: REQUEST.width,
           height: REQUEST.height,
           seed,
-          steps: 30,
-          cfg_scale: 3.5,
+          // Fewer steps or weaker guidance and about half the pictures come back
+          // soft, as if out of focus: the drawing has not finished forming.
+          steps: 45,
+          cfg_scale: 5,
           mode: 'base',
         }),
         signal: AbortSignal.timeout(120_000),
@@ -86,11 +92,19 @@ export async function generatePicture(subject: string, options: Options = {}): P
     const art = body?.artifacts?.[0];
     if (art?.finishReason === 'SUCCESS' && art.base64) {
       const image = Buffer.from(art.base64, 'base64');
-      if (!(await isBlank(image))) return { image, seed };
+      if (!(await isBlank(image))) {
+        const sharp = await sharpness(image);
+        if (options.sameSeed || sharp === null || sharp >= SOFT) return { image, seed };
+        // Soft. Another seed is usually crisp.
+        if (!best || sharp > best.sharp) best = { image, seed, sharp };
+        seed = newSeed();
+        continue;
+      }
     }
     // Filtered, an empty answer, or a blank white picture: another seed usually gets through.
     last = new GenerateError('The picture service would not draw this. Try describing it differently.', 'filtered');
     seed = newSeed();
   }
+  if (best) return { image: best.image, seed: best.seed };
   throw last;
 }

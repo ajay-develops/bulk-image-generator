@@ -4,7 +4,7 @@ import { memo } from 'react';
 
 import type { CardView } from '@/lib/actions';
 import { imageUrl } from '@/lib/client';
-import type { SlotIndex } from '@/lib/types';
+import { SOFT, type SlotIndex } from '@/lib/types';
 
 /** '' idle, 'busy', or 'error:<what went wrong>'. A string so the card can be memoised. */
 export type SlotStatus = string;
@@ -18,6 +18,7 @@ export const WordCard = memo(function WordCard(props: {
   onSubject: (key: string, text: string) => void;
   onSubjectDone: (key: string) => void;
   onGenerate: (key: string, slots: SlotIndex[]) => void;
+  onSharpen: (key: string, slot: SlotIndex) => void;
   onChoose: (key: string, slot: SlotIndex | null) => void;
   onZoom: (key: string, id: string) => void;
 }) {
@@ -58,6 +59,8 @@ export const WordCard = memo(function WordCard(props: {
           const st = status[i];
           const selected = state.selected === i;
           const dimmed = state.selected !== null && !selected;
+          // Measured when the picture was made. Older pictures have no measure and show no button.
+          const soft = typeof slot?.sharp === 'number' && slot.sharp < SOFT;
           return (
             <div key={i} className={`slot ${selected ? 'selected' : ''} ${dimmed ? 'dimmed' : ''}`}>
               {slot ? (
@@ -82,6 +85,17 @@ export const WordCard = memo(function WordCard(props: {
                 {slot && (
                   <button type="button" className="btn tiny" onClick={() => props.onZoom(card.key, slot.id)} aria-label={`Show picture ${i + 1} larger`}>
                     Expand
+                  </button>
+                )}
+                {slot && soft && (
+                  <button
+                    type="button"
+                    className="btn tiny warn"
+                    disabled={!props.canGenerate || st === 'busy'}
+                    title="This picture came out soft. Sharpen redraws the same picture, crisp."
+                    onClick={() => props.onSharpen(card.key, i)}
+                  >
+                    Sharpen
                   </button>
                 )}
                 {(slot || st.startsWith('error:')) && (

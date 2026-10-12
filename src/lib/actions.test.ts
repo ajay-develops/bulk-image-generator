@@ -6,7 +6,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import sharp from 'sharp';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { chooseSlot, exportZip, generateSlot, getAppState, importWords, readPicture, saveSubject } from './actions';
+import { chooseSlot, exportZip, generateSlot, getAppState, importWords, readPicture, saveSubject, sharpenSlot } from './actions';
 import { GenerateError } from './nvidia';
 import { imagePath } from './store';
 
@@ -189,5 +189,36 @@ describe('actions', () => {
     await importWords(zipWith({ 'l2-o1': { glyph: 'ለውዝ', meaning: 'almond' } }));
     await generateSlot('l2-o1', 0, fakeGenerate);
     expect((await cardOf('l2-o1')).changed).toBe(false);
+  });
+
+  it('redraws a picture from its own seed and description, and keeps the choice', async () => {
+    await importWords(zip);
+    await saveSubject('l2-o1', 'a yellow lemon');
+    await generateSlot('l2-o1', 0, fakeGenerate);
+    await saveSubject('l2-o1', 'something else typed since');
+    await chooseSlot('l2-o1', 0);
+    const before = (await cardOf('l2-o1')).state;
+    await exportZip('all');
+    let asked: unknown[] = [];
+    const { state } = await sharpenSlot('l2-o1', 0, async (subject, options) => { asked = [subject, options?.seed, options?.sameSeed]; return fakeGenerate(); });
+    expect(asked).toEqual(['a yellow lemon', 5, true]);
+    expect(state.selected).toBe(0);
+    expect(state.slots[0]!.id).not.toBe(before.slots[0]!.id);
+    expect(state.slots[0]).toMatchObject({ subject: 'a yellow lemon', seed: 5 });
+    await expect(readPicture('l2-o1', before.slots[0]!.id)).rejects.toMatchObject({ status: 404 });
+    // The chosen picture is a new file, so it has to go out to the editor again.
+    expect(Object.keys(unzipSync((await exportZip('changed')).zip))).toContain('pictures/l2-o1.webp');
+  });
+
+  it('refuses to redraw an empty slot', async () => {
+    await importWords(zip);
+    await expect(sharpenSlot('l2-o1', 1, fakeGenerate)).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('reports how sharp each picture is', async () => {
+    await importWords(zip);
+    await generateSlot('l2-o1', 0, fakeGenerate);
+    const card = await cardOf('l2-o1');
+    expect(card.state.slots[0]).toHaveProperty('sharp');
   });
 });

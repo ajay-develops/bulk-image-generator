@@ -21,7 +21,17 @@ export type Word = {
 };
 
 /** One generated picture. The file is data/images/<key>/<id>.webp. */
-export type Slot = { id: string; seed: number; subject: string; createdAt: string };
+export type Slot = {
+  id: string;
+  seed: number;
+  subject: string;
+  createdAt: string;
+  /** How crisp the picture is (see sharpness); null when it is too plain to tell. Missing on older pictures. */
+  sharp?: number | null;
+};
+
+/** Below this a picture looks soft at full size. The app's own pictures sit around 0.66. */
+export const SOFT = 0.45;
 
 export type SlotIndex = 0 | 1 | 2;
 

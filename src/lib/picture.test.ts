@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
-import { isBlank, toPicture } from './picture';
+import { isBlank, sharpness, toPicture } from './picture';
 
 const blank = (width: number, height: number) =>
   sharp({ create: { width, height, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
@@ -34,5 +34,17 @@ describe('toPicture', () => {
     expect(await isBlank(speck)).toBe(true);
     expect(await isBlank(drawn)).toBe(false);
     expect(await isBlank(Buffer.from('not a picture'))).toBe(false);
+  });
+
+  it('tells a crisp picture from a soft one', async () => {
+    const crisp = await sharp({ create: { width: 1216, height: 832, channels: 3, background: '#ffffff' } })
+      .composite([{ input: await sharp({ create: { width: 400, height: 400, channels: 3, background: '#222222' } }).png().toBuffer(), left: 400, top: 200 }])
+      .png().toBuffer();
+    const soft = await sharp(crisp).blur(5).png().toBuffer();
+    const plain = await sharp({ create: { width: 1216, height: 832, channels: 3, background: '#ffffff' } }).png().toBuffer();
+    expect(await sharpness(crisp)).toBeGreaterThan(0.6);
+    expect(await sharpness(soft)).toBeLessThan(0.42);
+    expect(await sharpness(plain)).toBeNull();
+    expect(await sharpness(Buffer.from('nope'))).toBeNull();
   });
 });

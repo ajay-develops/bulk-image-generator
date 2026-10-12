@@ -1,7 +1,7 @@
 import type { CardView } from './actions';
 import type { SlotIndex } from './types';
 
-export type Job = { key: string; slot: SlotIndex };
+export type Job = { key: string; slot: SlotIndex; /** Redraw the picture that is there, keeping a choice of it. */ sharpen?: boolean };
 export type Filter = 'needs' | 'unchosen' | 'all';
 
 /**

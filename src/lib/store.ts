@@ -83,14 +83,24 @@ export function noteDrawnFor(state: WordState, word: Word, startingOver = false)
 }
 
 /** Puts a new picture in a slot. Clears the choice if that slot was the chosen one. */
-export async function fillSlot(key: string, index: SlotIndex, slot: Slot, word?: Word): Promise<{ state: WordState; replaced: string | null }> {
+export async function fillSlot(
+  key: string,
+  index: SlotIndex,
+  slot: Slot,
+  word?: Word,
+  /** The new picture is the old one redrawn, so a choice of it still stands. */
+  keepChoice = false,
+): Promise<{ state: WordState; replaced: string | null }> {
   let replaced: string | null = null;
   const state = await updateWord(key, (s) => {
     // With no pictures yet, this one starts the set, for the word as it is now.
     if (word) noteDrawnFor(s, word, s.slots.every((x) => !x));
     replaced = s.slots[index]?.id ?? null;
     s.slots[index] = slot;
-    if (s.selected === index) {
+    if (s.selected === index && keepChoice) {
+      // A new file all the same: it has to go out to the editor again.
+      s.selectedAt = new Date().toISOString();
+    } else if (s.selected === index) {
       s.selected = null;
       delete s.selectedAt;
       delete s.madeFor;

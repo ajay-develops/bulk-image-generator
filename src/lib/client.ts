@@ -25,8 +25,9 @@ export async function putWord(key: string, body: { subject?: string; selected?: 
   return json(await fetch(`/api/words/${key}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), keepalive: true }));
 }
 
-export async function generate(key: string, slot: SlotIndex): Promise<{ state: WordState }> {
-  return json(await fetch(`/api/words/${key}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot }) }));
+/** `sharpen` redraws the picture already in the slot from its own seed, keeping a choice of it. */
+export async function generate(key: string, slot: SlotIndex, sharpen = false): Promise<{ state: WordState }> {
+  return json(await fetch(`/api/words/${key}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slot, ...(sharpen ? { sharpen: true } : {}) }) }));
 }
 
 export function imageUrl(key: string, id: string): string {

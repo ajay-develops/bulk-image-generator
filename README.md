@@ -55,9 +55,16 @@ Every picture is **1152×768 WebP** on a white background. That is the exact
 size and shape of the pictures the app already ships, and the app crops a
 picture to fill its frame, so a different shape would be cropped differently.
 
-The picture service is asked for 1216×832, not 1152×768: at the app's own
-size it answers with a soft, blurred picture, and at 1216×832 it is sharp. The
-result is trimmed by about ten rows top and bottom and scaled to 1152×768.
+The picture service is asked for 1216×832, one of the sizes the model was
+trained on; the result is trimmed by about ten rows top and bottom and scaled
+to 1152×768.
+
+**Soft pictures.** With too few steps the service returns a picture that looks
+out of focus: at 30 steps and guidance 3.5 about half of them did. The app now
+asks for 45 steps and guidance 5, measures how crisp each picture is, and
+tries another seed when one still comes back soft. A picture that stays soft
+gets a **Sharpen** button, which redraws it from its own seed: the same
+picture, crisp, and still chosen if it was.
 
 Each description is sent with one fixed style line (realistic, detailed
 picture-dictionary illustration, true-to-life details, single subject, plain
