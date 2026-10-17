@@ -103,7 +103,7 @@ Top bar:
 
 Word card:
 
-- the Ge'ez word, its meaning and pronunciation, its key, a "has a picture in
+- the Tigrinya word, its meaning and pronunciation, its key, a "has a picture in
   the editor" note when that applies
 - **What to draw**: a text box, prefilled from the meaning. Saved as you type.
 - three picture slots in a row, each 3:2. An empty slot is a grey frame; a slot
